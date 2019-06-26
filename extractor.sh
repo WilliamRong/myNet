@@ -9,9 +9,9 @@ sub_dir=$(ls -l ./ |awk '/^d/ {print $NF}')
 for j in $sub_dir
 do
 cd ./$j
-python /media/a5/image3/rw/models/tsn-pytorch-collective/extractor.py --data_dir ./RGB --features_dir /media/a5/image3/rw/models/tsn-pytorch-collective/features_resnet/$i/$j/RGB --modality RGB
+python /media/a5/image3/rw/models/myNet/extractor.py --data_dir ./RGB --features_dir /media/a5/image3/rw/models/myNet/features_resnet/$i/$j/RGB --modality RGB
 
-python /media/a5/image3/rw/models/tsn-pytorch-collective/extractor.py --data_dir ./Flow --features_dir /media/a5/image3/rw/models/tsn-pytorch-collective/features_resnet/$i/$j/Flow --modality Flow
+python /media/a5/image3/rw/models/myNet/extractor.py --data_dir ./Flow --features_dir /media/a5/image3/rw/models/myNet/features_resnet/$i/$j/Flow --modality Flow
 cd ..
 done
 cd ..

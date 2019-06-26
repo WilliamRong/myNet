@@ -64,7 +64,7 @@ VideoRecord这个类只是提供了一些简单的封装，用来返回关于数
 class myDataset(data.Dataset):
     def __init__(self, root_path, list_file,
                  num_segments=3, new_length=1, transform=None,
-                 force_grayscale=False, random_shift=True, test_mode=False):
+                 random_shift=True, test_mode=False):
 
         self.root_path = root_path
         self.list_file = list_file
@@ -99,7 +99,7 @@ class myDataset(data.Dataset):
         """
 
         #实际输入的帧数是停止帧数与起始帧数的差减1,这是为了避免取到边界
-        average_duration = (record.end_frames-record.start_frames -1 - self.new_length + 1) // self.num_segments #视频分成num_segments份后每份的帧数
+        average_duration = (record.end_frames-record.start_frames -2 - self.new_length + 1) // self.num_segments #视频分成num_segments份后每份的帧数
         #比如num_segments=3,num_frames=150,则average_duration=50,区间为[0,49],[50,99],[100,149]
         if average_duration > 0:
             offsets = np.multiply(list(range(self.num_segments)), average_duration) + randint(average_duration, size=self.num_segments)
@@ -110,13 +110,15 @@ class myDataset(data.Dataset):
         else:
             offsets = np.zeros((self.num_segments,))
 
-        if len(os.listdir(record.path))//3 > record.end_frames-2:
-            offsets +=record.start_frames
+        #if len(os.listdir(record.path))//3 > record.end_frames-2:
+        #    offsets +=record.start_frames
         # 如果出现人不在第一帧出现且只有一种动作标签的情况，由于图片序号仍是从1开始的，就不能加偏移量（起始帧数）;
         # 而如果人存在两个动作以上且从第一帧开始，之后的动作必然要和图片序号对应，就需要偏移量，这里用图片数量和停止帧数对比进行判断
         # 如果图片数量大于停止帧数减2，一般认为是同一个人的第一个动作之后的动作，不从第一帧开始，加偏移量（起始帧数）.
-
-        return offsets + 1 #返回[3,76,149],+1是因为offsets的取值是[0,149],标签则是[1,150]
+        #print("train_offset:"+str(offsets+1))
+        offsets[0]+=1
+        offsets[2]-=1
+        return offsets + record.start_frames #返回[3,76,149],+1是因为offsets的取值是[0,149],标签则是[1,150]
 
 
     def _get_val_indices(self, record):
@@ -127,9 +129,10 @@ class myDataset(data.Dataset):
         else:
             offsets = np.zeros((self.num_segments,))
 
-        if len(os.listdir(record.path)) // 3 > record.end_frames - 2:
-            offsets += record.start_frames
+        #if len(os.listdir(record.path)) // 3 > record.end_frames - 2:
+        #    offsets += record.start_frames
 
+        #print("val_offset:"+str(offsets+1))
         return offsets + 1
     """
     在myDataset类的_get_test_indices方法中，就是将输入video按照相等帧数距离分成self.num_segments份，
@@ -143,8 +146,8 @@ class myDataset(data.Dataset):
         offsets = np.array([int(tick / 2.0 + tick * x) for x in range(self.num_segments)])
         #和get_val_indices方法一模一样，取区间中间一帧，也为[25,75,125]
 
-        if len(os.listdir(record.path)) // 3 > record.end_frames - 2:
-            offsets += record.start_frames
+        #if len(os.listdir(record.path)) // 3 > record.end_frames - 2:
+        #    offsets += record.start_frames
 
         return offsets + 1
     """
@@ -162,6 +165,8 @@ class myDataset(data.Dataset):
         else:
             segment_indices = self._get_test_indices(record)
 
+        #print("path: "+record.path+" start_frame: "+str(record.start_frames)+" end_frame: "+str(record.end_frames))
+        #print("move_label: "+str(record.move_label)+" pose_label: "+str(record.pose_label)+" group_label: "+str(record.group_label))
         return self.get(record, segment_indices) #返回一个Tensor数据和一个int标签，格式见注释
     """
     在myDataset类的get方法中，先通过seg_imgs = self._load_image(record.path, p)来读取图像数据。
@@ -179,9 +184,17 @@ class myDataset(data.Dataset):
         coordinate=list()
 
         features_sum =list()#定义一个列表
-        for seg_ind in indices:
 
-            p = int(seg_ind)
+        for seg_ind in indices:
+            #print("indices=%s,seg_ind=%s,startframes=%d,endframes=%d,path=%s,%r"%
+            #      (indices,seg_ind,record.start_frames,record.end_frames,record._data[0],
+            #       os.path.exists(str(record._data[0])+'/RGB/img_%05d.jpg.txt'%(seg_ind))))
+            if os.path.exists(str(record._data[0])+'/RGB/img_%05d.jpg.txt'%(seg_ind)):
+                p = int(seg_ind)
+            else:
+                p = int(seg_ind) - record.start_frames
+            #print("p=%d"%(p))
+
 
             #get label and coordinates
             idx=str(record._data[0]).split('/')
@@ -203,23 +216,27 @@ class myDataset(data.Dataset):
 
             #get features
             features=list()
-            with open(str(record._data[0])+'/RGB/img_%05d.jpg.txt'%(seg_ind),'r') as f_rgb:
+            #print(str(record._data[0])+'/RGB/img_%05d.jpg.txt'%(p))
+            with open(str(record._data[0])+'/RGB/img_%05d.jpg.txt'%(p),'r') as f_rgb:
                 for line in f_rgb:
                     features.append(float(line.strip('\n')))
             f_rgb.close()
 
             #flow_window
             p_flow=p
+
             for i in range(p_flow,p_flow+6):
                 if not os.path.exists(str(record._data[0])+'/Flow/flow_x_%05d.jpg.txt'%(i)):
                     p_flow-=1
 
             for i in range(p_flow,p_flow+6):
+                #print(str(record._data[0]) + '/Flow/flow_x_%05d.jpg.txt'%(i))
                 with open(str(record._data[0])+'/Flow/flow_x_%05d.jpg.txt'%(i),'r') as f_flow:
                     for line in f_flow:
                         features.append((float(line.strip('\n'))))
                 f_flow.close()
             for i in range(p_flow,p_flow+6):
+                #print(str(record._data[0]) + '/Flow/flow_y_%05d.jpg.txt' % (i))
                 with open(str(record._data[0])+'/Flow/flow_y_%05d.jpg.txt'%(i),'r') as f_flow:
                     for line in f_flow:
                         features.append((float(line.strip('\n'))))
@@ -245,11 +262,12 @@ class myDataset(data.Dataset):
 
             features_mixed[i]=tmp
             del tmp
-        process_data =torch.from_numpy(features_mixed)
+        process_data =torch.from_numpy(features_mixed).float()
 
         #labels mix up
-        mixed_labels=[record.person,coordinate,str(record.move_label - 1),str(record.pose_label - 1),str(record.group_label - 1)]
-        print(record.person+" done!")
+        mixed_labels=[int(record.person),coordinate,int(record.move_label - 1),int(record.pose_label - 1),int(record.group_label - 1)]
+
+        #print(record.person+" done!")
         return process_data,mixed_labels
 
     def __len__(self):
